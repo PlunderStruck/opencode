@@ -38,7 +38,9 @@ import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
+import { AuthWellKnownTest } from "../fake/auth-well-known"
 import { NpmTest } from "../fake/npm"
+import { Substitution } from "@opencode-ai/core/substitution"
 
 /** Infra layer that provides FileSystem, Path, ChildProcessSpawner for test fixtures */
 const infra = CrossSpawnSpawner.defaultLayer.pipe(
@@ -96,6 +98,8 @@ const configLayer = (
 ) =>
   Config.layer.pipe(
     Layer.provide(testFlock),
+    Layer.provide(Substitution.defaultLayer),
+    Layer.provide(AuthWellKnownTest.empty),
     Layer.provide(Env.defaultLayer),
     Layer.provide(options.auth ?? AuthTest.empty),
     Layer.provide(options.account ?? AccountTest.empty),
@@ -1504,6 +1508,8 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
           Config.layer.pipe(
             Layer.provide(testFlock),
             Layer.provide(FSUtil.defaultLayer),
+            Layer.provide(Substitution.defaultLayer),
+            Layer.provide(AuthWellKnownTest.empty),
             Layer.provide(Env.defaultLayer),
             Layer.provide(wellKnownAuth(server.url.origin)),
             Layer.provide(AccountTest.empty),
