@@ -25,6 +25,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
+import PROMPT_COMPACTION from "@/agent/prompt/compaction.txt"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -137,6 +138,17 @@ function splitTurn(input: {
     }
     return undefined
   })
+}
+
+function appendStylePrompt(input: { prompt: string }) {
+  return [
+    "<compaction-instructions>",
+    PROMPT_COMPACTION,
+    "",
+    "For this response, only produce the requested anchored summary. Do not call tools, continue implementation, answer the user, or perform any other task.",
+    "</compaction-instructions>",
+    input.prompt,
+  ].join("\n")
 }
 
 export interface Interface {
@@ -335,10 +347,9 @@ export const layer = Layer.effect(
         }
       }
 
-      const agent = yield* agents.get("compaction")
-      const model = agent.model
-        ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
-        : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
+      const agent = yield* agents.get(userMessage.agent)
+      if (!agent) throw new Error(`Agent not found: "${userMessage.agent}"`)
+      const model = yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)
@@ -355,7 +366,9 @@ export const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      const nextPrompt = appendStylePrompt({
+        prompt: compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context }),
+      })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
