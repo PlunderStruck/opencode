@@ -12,7 +12,7 @@ import { Search } from "@opencode-ai/core/filesystem/search"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 
-const DEFAULT_READ_LIMIT = 2000
+const DEFAULT_READ_LIMIT = 500
 const MAX_LINE_LENGTH = 2000
 const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`
 const MAX_BYTES = 50 * 1024
@@ -33,7 +33,7 @@ export const Parameters = Schema.Struct({
     description: "The line number to start reading from (1-indexed)",
   }),
   limit: Schema.optional(NonNegativeInt).annotate({
-    description: "The maximum number of lines to read (defaults to 2000)",
+    description: "The maximum number of lines to read (defaults to 500)",
   }),
 })
 
