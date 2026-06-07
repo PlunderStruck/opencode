@@ -28,9 +28,18 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { LLMXmlToolCall } from "./llm/xml-tool-call"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+
+function normalizeXmlToolCalls(stream: Stream.Stream<LLMEvent, unknown>) {
+  const state = LLMXmlToolCall.adapterState()
+  return stream.pipe(
+    Stream.mapEffect((event) => LLMXmlToolCall.toLLMEvents(state, event)),
+    Stream.flatMap((events) => Stream.fromIterable(events)),
+  )
+}
 
 export type StreamInput = {
   user: SessionV1.User
@@ -254,7 +263,7 @@ const live: Layer.Layer<
           )
           return {
             type: "native" as const,
-            stream: native.stream,
+            stream: normalizeXmlToolCalls(native.stream),
           }
         }
         yield* Effect.logInfo("llm runtime selected").pipe(
@@ -373,6 +382,7 @@ const live: Layer.Layer<
             ).pipe(
               Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
               Stream.flatMap((events) => Stream.fromIterable(events)),
+              normalizeXmlToolCalls,
             )
           }),
         ),
