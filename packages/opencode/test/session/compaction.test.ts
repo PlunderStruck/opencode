@@ -36,6 +36,9 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SystemPrompt } from "@/session/system"
 import { Instruction } from "@/session/instruction"
+import { ToolRegistry } from "@/tool/registry"
+import { MCP } from "@/mcp"
+import { Truncate } from "@/tool/truncate"
 
 void Log.init({ print: false })
 
@@ -86,7 +89,7 @@ function createModel(opts: {
       input: { text: true, image: false, audio: false, video: false },
       output: { text: true, image: false, audio: false, video: false },
     },
-    api: { npm: opts.npm ?? "@ai-sdk/anthropic" },
+    api: { id: "test-model", npm: opts.npm ?? "@ai-sdk/anthropic" },
     options: {},
   } as Provider.Model
 }
@@ -241,6 +244,10 @@ const deps = Layer.mergeAll(
   EventV2Bridge.defaultLayer,
   SystemPrompt.defaultLayer,
   Instruction.defaultLayer,
+  Permission.defaultLayer,
+  ToolRegistry.defaultLayer,
+  MCP.defaultLayer,
+  Truncate.defaultLayer,
 )
 
 const env = Layer.mergeAll(
@@ -290,6 +297,9 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     Layer.provide(Snapshot.defaultLayer),
     Layer.provide(options?.llm ?? LLM.defaultLayer),
     Layer.provide(Permission.defaultLayer),
+    Layer.provide(ToolRegistry.defaultLayer),
+    Layer.provide(MCP.defaultLayer),
+    Layer.provide(Truncate.defaultLayer),
     Layer.provide(Agent.defaultLayer),
     Layer.provide(options?.plugin ?? Plugin.defaultLayer),
     Layer.provide(status),
@@ -1402,7 +1412,8 @@ describe("session.compaction.process", () => {
         expect(captured?.agent.name).toBe("build")
         expect(captured?.model.providerID).toBe(ref.providerID)
         expect(captured?.model.id).toBe(ref.modelID)
-        expect(Object.keys(captured?.tools ?? {})).toEqual([])
+        expect(Object.keys(captured?.tools ?? {}).length).toBeGreaterThan(0)
+        expect(captured?.toolChoice).toBe("none")
         expect(captured?.system.join("\n")).toContain("You are powered by the model named")
         expect(captured?.system.join("\n")).toContain("Parallel tool calls are disabled")
         expect(JSON.stringify(captured?.messages.at(-1))).toContain("<compaction-instructions>")
