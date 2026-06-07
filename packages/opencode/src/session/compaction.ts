@@ -26,6 +26,8 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { EventV2 } from "@opencode-ai/core/event"
 import { buildPrompt } from "@opencode-ai/core/session/compaction"
 import PROMPT_COMPACTION from "@/agent/prompt/compaction.txt"
+import { SystemPrompt } from "./system"
+import { Instruction } from "./instruction"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -45,6 +47,7 @@ const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
+const SERIAL_TOOL_CALL_SYSTEM_PROMPT = `Parallel tool calls are disabled. Call at most one tool per assistant turn, then wait for the tool result before calling another tool.`
 type Turn = {
   start: number
   end: number
@@ -188,6 +191,8 @@ export const layer = Layer.effect(
     const provider = yield* Provider.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const sys = yield* SystemPrompt.Service
+    const instruction = yield* Instruction.Service
 
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: SessionV1.Assistant["tokens"]
@@ -369,12 +374,15 @@ export const layer = Layer.effect(
       const nextPrompt = appendStylePrompt({
         prompt: compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context }),
       })
-      const msgs = structuredClone(selected.head)
+      const msgs = structuredClone(history.filter((_, index) => !hidden.has(index)))
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
-      const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
-        stripMedia: true,
-        toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
-      })
+      const [skills, env, instructions, modelMessages] = yield* Effect.all([
+        sys.skills(agent),
+        sys.environment(model),
+        instruction.system().pipe(Effect.orDie),
+        MessageV2.toModelMessagesEffect(msgs, model),
+      ])
+      const system = [...env, ...instructions, ...(skills ? [skills] : []), SERIAL_TOOL_CALL_SYSTEM_PROMPT]
       const tailIndex = selected.tail_start_id
         ? history.findIndex((message) => message.info.id === selected.tail_start_id)
         : -1
@@ -425,7 +433,7 @@ export const layer = Layer.effect(
         agent,
         sessionID: input.sessionID,
         tools: {},
-        system: [],
+        system,
         messages: [
           ...modelMessages,
           {
@@ -614,6 +622,8 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Agent.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
     Layer.provide(Config.defaultLayer),
+    Layer.provide(SystemPrompt.defaultLayer),
+    Layer.provide(Instruction.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
   ),
